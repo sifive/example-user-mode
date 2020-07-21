@@ -15,10 +15,10 @@ uint8_t my_stack[768] __attribute__((aligned(16)));
 
 /* Create the register file for user mode execution */
 struct metal_register_file my_regfile = {
-	.sp = (uintptr_t) (my_stack + sizeof(my_stack)),
+	.sp = (riscv_xlen_t) (my_stack + sizeof(my_stack)),
 };
 
-void illegal_instruction_fault_handler(struct metal_cpu *cpu, int ecode)
+void metal_exception_illegal_instruction_handler(struct metal_cpu cpu, int ecode)
 {
 	if(ecode == ECODE_ILLEGAL_INSTRUCTION) {
 		printf("Caught illegal instruction in User mode\n");
@@ -40,38 +40,7 @@ void user_mode_entry_point()
 
 int main()
 {
-	int rc;
-	struct metal_cpu *cpu;
-	struct metal_interrupt *cpu_intr;
-	struct metal_pmp *pmp;
-
-	/* Initialize interrupt handling on CPU 0 */
-	cpu = metal_cpu_get(metal_cpu_get_current_hartid());
-	if(!cpu) {
-		printf("Unable to get CPU 0 handle\n");
-		return 1;
-	}
-	cpu_intr = metal_cpu_interrupt_controller(cpu);
-	if(!cpu_intr) {
-		printf("Unable to get CPU 0 Interrupt handle\n");
-		return 2;
-	}
-	metal_interrupt_init(cpu_intr);
-
-	/* Register a handler for the store access fault exception */
-	rc = metal_cpu_exception_register(cpu, ECODE_ILLEGAL_INSTRUCTION, illegal_instruction_fault_handler);
-	if(rc < 0) {
-		printf("Failed to register exception handler\n");
-		return 3;
-	}
-
-	/* Initialize PMPs */
-	pmp = metal_pmp_get_device();
-	if(!pmp) {
-		printf("Unable to get PMP Device\n");
-		return 4;
-	}
-	metal_pmp_init(pmp);
+	metal_pmp_init();
 
 	/* Configure PMP 0 to allow access to all memory */
 	struct metal_pmp_config config = {
@@ -81,12 +50,12 @@ int main()
 		.W = 1,
 		.R = 1,
 	};
-	rc = metal_pmp_set_region(pmp, 0, config, -1);
+	int rc = metal_pmp_set_region(0, config, UINTPTR_MAX);
 	if(rc != 0) {
 		return 5;
 	}
 
-	printf("Dropping privilege to User mode");
+	printf("Dropping privilege to User mode\n");
 
 	/* Drop to user mode */
 	metal_privilege_drop_to_mode(METAL_PRIVILEGE_USER, my_regfile, user_mode_entry_point);
